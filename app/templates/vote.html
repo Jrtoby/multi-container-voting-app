@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block content %}
+    <h2>{{ poll.question }}</h2>
+    <form method="POST">
+        <input type="radio" name="choice" value="A" required> {{ poll.option_a }}<br><br>
+        <input type="radio" name="choice" value="B" required> {{ poll.option_b }}<br><br>
+        <button type="submit">Submit Vote</button>
+    </form>
+{% endblock %}

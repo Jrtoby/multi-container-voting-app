@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block content %}
+    {% if poll %}
+        <h2>Results for: {{ poll.question }}</h2>
+        <p>{{ poll.option_a }}: {{ votes_a }} votes</p>
+        <p>{{ poll.option_b }}: {{ votes_b }} votes</p>
+    {% else %}
+        <p>No polls available yet.</p>
+    {% endif %}
+{% endblock %}
