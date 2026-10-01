@@ -1,4 +1,6 @@
 import os
+import json
+import redis
 from flask import Flask, render_template, redirect, url_for, flash, request
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user
 from sqlalchemy import text
@@ -8,6 +10,8 @@ app = Flask(__name__)
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'default-key')
 app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL', 'postgresql+psycopg2://voting_user:group12cohort8@localhost:5432/voting_db')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+# Connect to Redis (running locally on this server)
+r = redis.Redis(host='localhost', port=6379, db=0, decode_responses=True)
 
 db.init_app(app)
 
@@ -74,10 +78,14 @@ def vote():
         if existing_vote:
             flash('You have already voted!')
         else:
-            vote = Vote(user_id=current_user.id, poll_id=poll.id, choice=choice)
-            db.session.add(vote)
-            db.session.commit()
-            flash('Vote cast successfully!')
+            # Instead of writing to DB, push to Redis Queue
+            vote_data = {
+                'user_id': current_user.id,
+                'poll_id': poll.id,
+                'choice': choice
+            }
+            r.lpush('vote_queue', json.dumps(vote_data))
+            flash('Vote submitted! It will be processed shortly.')
         return redirect(url_for('results'))
     
     return render_template('vote.html', poll=poll)
@@ -88,8 +96,20 @@ def results():
     if not poll:
         return render_template('results.html', poll=None)
     
+ # Check if we have cached results in Redis
+    cached_results = r.get('results_cache')
+    if cached_results:
+        print("Serving from Redis Cache!")
+        data = json.loads(cached_results)
+        return render_template('results.html', poll=poll, votes_a=data['votes_a'], votes_b=data['votes_b'])
+    
+    print("Serving from Database!")
     votes_a = Vote.query.filter_by(poll_id=poll.id, choice='A').count()
     votes_b = Vote.query.filter_by(poll_id=poll.id, choice='B').count()
+
+ # Save to Redis cache for 10 seconds
+    r.setex('results_cache', 10, json.dumps({'votes_a': votes_a, 'votes_b': votes_b}))
+
     return render_template('results.html', poll=poll, votes_a=votes_a, votes_b=votes_b)
 
 @app.route('/admin')
