@@ -8,10 +8,15 @@ from models import db, User, Poll, Vote
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'default-key')
-app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL', 'postgresql+psycopg2://voting_user:group12cohort8@localhost:5432/voting_db')
+# The fallbacks below suit a run outside Docker. docker-compose.yml always
+# injects the real values, so inside a container these are never used.
+app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv(
+    'DATABASE_URL',
+    'postgresql+psycopg2://voting_user:supersecretpassword@localhost:5432/voting_db'
+)
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-# Connect to Redis. Defaults suit a local run; docker-compose sets
-# REDIS_HOST=redis because 'localhost' inside the container is the container.
+# 'localhost' inside a container is the container itself, so REDIS_HOST must be
+# overridable — docker-compose.yml sets it to the 'redis' service name.
 r = redis.Redis(
     host=os.getenv('REDIS_HOST', 'localhost'),
     port=int(os.getenv('REDIS_PORT', 6379)),

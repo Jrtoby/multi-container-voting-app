@@ -9,6 +9,9 @@
 # Start order is enforced by healthchecks, not by start delays: `web` and
 # `worker` only start once `db` and `redis` report healthy.
 #
+# Every ${VAR} below has an inline default, so the stack boots with no .env
+# file. Copy .env.example to .env to override any of them.
+#
 # The `version` key is intentionally omitted — it is obsolete in Compose v2
 # and only produces a deprecation warning.
 #
@@ -88,7 +91,7 @@ services:
       interval: 15s
       timeout: 5s
       retries: 3
-      # Compose creates the tables at import time, so allow a slow first boot
+      # app.py creates the tables at import time, so allow a slow first boot
       # instead of counting it against the retries above.
       start_period: 20s
 
@@ -104,9 +107,9 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-      # The Flask app creates the schema on boot, and the worker BRPOPs
-      # (destructive read) before it inserts. Waiting for `web` to be healthy
-      # guarantees the tables exist, otherwise early votes are popped off the
+      # app.py creates the schema on boot, and the worker BRPOPs (a
+      # destructive read) before it inserts. Waiting for `web` to be healthy
+      # guarantees the tables exist; otherwise early votes are popped off the
       # queue and dropped on an insert failure.
       web:
         condition: service_healthy
@@ -114,8 +117,8 @@ services:
       - voting_net
     healthcheck:
       # The worker has no HTTP listener, so probe its real dependency.
-      # reconnectStrategy: false makes a Redis outage fail fast instead of
-      # retrying until the healthcheck times out.
+      # reconnectStrategy: () => false makes a Redis outage fail fast instead
+      # of retrying until the healthcheck times out.
       test:
         - CMD
         - node
