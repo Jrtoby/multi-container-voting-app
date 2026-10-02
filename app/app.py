@@ -10,8 +10,14 @@ app = Flask(__name__)
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'default-key')
 app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL', 'postgresql+psycopg2://voting_user:group12cohort8@localhost:5432/voting_db')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-# Connect to Redis (running locally on this server)
-r = redis.Redis(host='localhost', port=6379, db=0, decode_responses=True)
+# Connect to Redis. Defaults suit a local run; docker-compose sets
+# REDIS_HOST=redis because 'localhost' inside the container is the container.
+r = redis.Redis(
+    host=os.getenv('REDIS_HOST', 'localhost'),
+    port=int(os.getenv('REDIS_PORT', 6379)),
+    db=0,
+    decode_responses=True,
+)
 
 db.init_app(app)
 

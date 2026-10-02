@@ -1,0 +1,134 @@
+# Multi-Container Voting App — orchestration
+#
+# Services:
+#   db      PostgreSQL 15   persistent relational store
+#   redis   Redis 7         vote_queue (async hand-off) + results_cache
+#   web     Flask           UI, auth, voting, results, admin dashboard
+#   worker  Node.js         drains vote_queue, writes votes to Postgres
+#
+# Start order is enforced by healthchecks, not by start delays: `web` and
+# `worker` only start once `db` and `redis` report healthy.
+#
+# The `version` key is intentionally omitted — it is obsolete in Compose v2
+# and only produces a deprecation warning.
+#
+# Run with:  docker compose up -d --build
+
+services:
+  # 1. PostgreSQL Database
+  db:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-voting_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-supersecretpassword}
+      POSTGRES_DB: ${POSTGRES_DB:-voting_db}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      # Published for psql access from the host.
+      # TODO: tighten to 127.0.0.1:5432 in the security-hardening PR.
+      - "5432:5432"
+    networks:
+      - voting_net
+    healthcheck:
+      # $${...} is escaped so the value is expanded by the shell *inside* the
+      # container from its own environment, not baked in at parse time.
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # 2. Redis Cache & Queue
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      # Published for redis-cli access from the host.
+      # TODO: tighten to 127.0.0.1:6379 in the security-hardening PR.
+      - "6379:6379"
+    networks:
+      - voting_net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
+  # 3. Flask Web Application
+  web:
+    build: ./app
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    environment:
+      # SQLAlchemy needs the driver in the scheme, hence +psycopg2.
+      # The worker uses the plain postgresql:// form for node-postgres.
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-voting_user}:${POSTGRES_PASSWORD:-supersecretpassword}@db:5432/${POSTGRES_DB:-voting_db}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      SECRET_KEY: ${SECRET_KEY:-change-me-to-a-long-random-string}
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - voting_net
+    healthcheck:
+      # Uses only the stdlib, so it works regardless of what the app image
+      # installs — no dependency on curl or wget being present.
+      test:
+        - CMD
+        - python
+        - -c
+        - "import sys, urllib.request; sys.exit(0 if urllib.request.urlopen('http://localhost:5000/health', timeout=5).status == 200 else 1)"
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      # Compose creates the tables at import time, so allow a slow first boot
+      # instead of counting it against the retries above.
+      start_period: 20s
+
+  # 4. Node.js Background Worker
+  worker:
+    build: ./worker
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-voting_user}:${POSTGRES_PASSWORD:-supersecretpassword}@db:5432/${POSTGRES_DB:-voting_db}
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      # The Flask app creates the schema on boot, and the worker BRPOPs
+      # (destructive read) before it inserts. Waiting for `web` to be healthy
+      # guarantees the tables exist, otherwise early votes are popped off the
+      # queue and dropped on an insert failure.
+      web:
+        condition: service_healthy
+    networks:
+      - voting_net
+    healthcheck:
+      # The worker has no HTTP listener, so probe its real dependency.
+      # reconnectStrategy: false makes a Redis outage fail fast instead of
+      # retrying until the healthcheck times out.
+      test:
+        - CMD
+        - node
+        - -e
+        - "const {createClient}=require('redis');const c=createClient({url:process.env.REDIS_URL,socket:{reconnectStrategy:()=>false}});c.on('error',()=>{});c.connect().then(()=>c.ping()).then(()=>process.exit(0)).catch(()=>process.exit(1));"
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+volumes:
+  postgres_data:
+
+networks:
+  voting_net:
+    driver: bridge
