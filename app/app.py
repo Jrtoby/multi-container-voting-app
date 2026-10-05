@@ -3,8 +3,18 @@ import json
 import redis
 from flask import Flask, render_template, redirect, url_for, flash, request
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user
+from flask_migrate import Migrate
 from sqlalchemy import text
 from models import db, User, Poll, Vote
+
+# Single source of truth for the poll the app is seeded with. Normally created by
+# `flask seed-poll` from app/entrypoint.sh; /vote falls back to it if the table
+# is somehow empty.
+DEFAULT_POLL = {
+    "question": "Which framework is better?",
+    "option_a": "Flask",
+    "option_b": "Node.js",
+}
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'default-key')
@@ -25,6 +35,9 @@ r = redis.Redis(
 )
 
 db.init_app(app)
+# Owns the schema. Alembic reads the engine from app.extensions['migrate'], which
+# is what app/migrations/env.py expects.
+migrate = Migrate(app, db)
 
 login_manager = LoginManager()
 login_manager.init_app(app)
@@ -77,8 +90,9 @@ def logout():
 def vote():
     poll = Poll.query.first()
     if not poll:
-        # Create a default poll if none exists
-        poll = Poll(question="Which framework is better?", option_a="Flask", option_b="Node.js")
+        # Fallback for a database emptied underneath a running app; the normal
+        # path is `flask seed-poll` at boot.
+        poll = Poll(**DEFAULT_POLL)
         db.session.add(poll)
         db.session.commit()
 
@@ -138,9 +152,21 @@ def health():
     except Exception as e:
         return {"status": "unhealthy", "error": str(e)}, 500
 
-# Create tables on first run
-with app.app_context():
-    db.create_all()
+@app.cli.command('seed-poll')
+def seed_poll():
+    """Create the default poll if the table is empty. Safe to run on every boot."""
+    if Poll.query.first():
+        print('poll already present; nothing to seed')
+        return
+    db.session.add(Poll(**DEFAULT_POLL))
+    db.session.commit()
+    print('seeded default poll')
+
+# The schema is owned by Alembic, not by db.create_all(). create_all() never
+# ALTERs an existing table, so on any deployment whose postgres_data volume
+# already existed it would silently ignore every later column or index change.
+# app/entrypoint.sh runs `flask db upgrade` before the server starts, and stamps
+# 0001 rather than head when it adopts a pre-migration volume.
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)
