@@ -1,4 +1,4 @@
-# Multi-Container Voting App — orchestration
+# Multi-Container Voting App ΓÇö orchestration
 #
 # Services:
 #   db      PostgreSQL 15   persistent relational store
@@ -12,7 +12,7 @@
 # Every ${VAR} below has an inline default, so the stack boots with no .env
 # file. Copy .env.example to .env to override any of them.
 #
-# The `version` key is intentionally omitted — it is obsolete in Compose v2
+# The `version` key is intentionally omitted ΓÇö it is obsolete in Compose v2
 # and only produces a deprecation warning.
 #
 # Run with:  docker compose up -d --build
@@ -82,7 +82,7 @@ services:
       - voting_net
     healthcheck:
       # Uses only the stdlib, so it works regardless of what the app image
-      # installs — no dependency on curl or wget being present.
+      # installs ΓÇö no dependency on curl or wget being present.
       test:
         - CMD
         - python
