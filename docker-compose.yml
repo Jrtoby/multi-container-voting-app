@@ -91,8 +91,8 @@ services:
       interval: 15s
       timeout: 5s
       retries: 3
-      # app.py creates the tables at import time, so allow a slow first boot
-      # instead of counting it against the retries above.
+      # Migrations and the poll seed finish before gunicorn binds, so allow a
+      # slow first boot rather than counting it against the retries above.
       start_period: 20s
 
   # 4. Node.js Background Worker

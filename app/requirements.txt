@@ -2,6 +2,13 @@ Flask==3.0.0
 Flask-SQLAlchemy==3.1.1
 Flask-Login==0.6.3
 Flask-WTF==1.2.1
+# Schema is owned by Alembic (app/migrations), run from app/entrypoint.sh.
+# Without these two, `flask db` is not a registered command.
+Flask-Migrate==4.0.7
+alembic==1.13.1
+# Serves the app in the container. Windows-only development uses `flask run`,
+# since gunicorn has no Windows support.
+gunicorn==22.0.0
 psycopg2-binary==2.9.11
 python-dotenv==1.0.0
 email-validator==2.1.0
