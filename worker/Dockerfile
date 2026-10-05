@@ -1,11 +1,11 @@
 FROM node:20-alpine
 
-WORKDIR /worker
+WORKDIR /app
 
 COPY package*.json ./
 
-RUN npm ci
+RUN npm ci --omit=dev
 
-COPY . .
+COPY worker.js .
 
 CMD ["node", "worker.js"]
