@@ -16,7 +16,7 @@ app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv(
 )
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 # 'localhost' inside a container is the container itself, so REDIS_HOST must be
-# overridable ΓÇö docker-compose.yml sets it to the 'redis' service name.
+# overridable — docker-compose.yml sets it to the 'redis' service name.
 r = redis.Redis(
     host=os.getenv('REDIS_HOST', 'localhost'),
     port=int(os.getenv('REDIS_PORT', 6379)),
