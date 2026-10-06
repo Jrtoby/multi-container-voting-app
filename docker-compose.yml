@@ -67,6 +67,8 @@ services:
     ports:
       - "5000:5000"
     environment:
+      FLASK_APP: app.py
+      FLASK_ENV: development
       # SQLAlchemy needs the driver in the scheme, hence +psycopg2.
       # The worker uses the plain postgresql:// form for node-postgres.
       DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-voting_user}:${POSTGRES_PASSWORD:-supersecretpassword}@db:5432/${POSTGRES_DB:-voting_db}
