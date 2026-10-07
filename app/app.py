@@ -1,11 +1,48 @@
 import os
 import json
+import logging
 import redis
 from flask import Flask, render_template, redirect, url_for, flash, request
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user
 from flask_migrate import Migrate
 from sqlalchemy import text
 from models import db, User, Poll, Vote
+
+
+class JsonLogFormatter(logging.Formatter):
+    """One JSON object per line — the same shape app/entrypoint.sh and the
+    Node worker emit, so `docker compose logs web` is machine-parseable."""
+
+    def format(self, record):
+        entry = {
+            "time": self.formatTime(record, "%Y-%m-%dT%H:%M:%S%z"),
+            "level": record.levelname,
+            "logger": record.name,
+            "msg": record.getMessage(),
+        }
+        if record.exc_info:
+            entry["exc_info"] = self.formatException(record.exc_info)
+        return json.dumps(entry)
+
+
+def _configure_logging():
+    """Attach a stdout-redirected JSON handler to the root logger.
+
+    Guarded so it never clobbers handlers a server or test runner already
+    installed; gunicorn captures stderr either way.
+    """
+    root = logging.getLogger()
+    if root.handlers:
+        return
+    handler = logging.StreamHandler()
+    handler.setFormatter(JsonLogFormatter())
+    root.setLevel(os.getenv("LOG_LEVEL", "INFO").upper())
+    root.addHandler(handler)
+
+
+_configure_logging()
+logger = logging.getLogger("voting.web")
+
 
 # Single source of truth for the poll the app is seeded with. Normally created by
 # `flask seed-poll` from app/entrypoint.sh; /vote falls back to it if the table
@@ -65,6 +102,7 @@ def register():
         user.set_password(password)
         db.session.add(user)
         db.session.commit()
+        logger.info("user registered: username=%s", username)
         flash('Registration successful! Please login.')
         return redirect(url_for('login'))
     return render_template('register.html')
@@ -75,7 +113,9 @@ def login():
         user = User.query.filter_by(username=request.form.get('username')).first()
         if user and user.check_password(request.form.get('password')):
             login_user(user)
+            logger.info("login succeeded: username=%s", user.username)
             return redirect(url_for('vote'))
+        logger.warning("login failed: username=%s", request.form.get('username'))
         flash('Invalid username or password')
     return render_template('login.html')
 
@@ -98,9 +138,21 @@ def vote():
 
     if request.method == 'POST':
         choice = request.form.get('choice')
+        # The queue message becomes a NOT NULL row, so never enqueue junk.
+        if choice not in ('A', 'B'):
+            logger.warning(
+                "vote rejected: user_id=%s sent invalid choice=%r",
+                current_user.id, choice,
+            )
+            flash('Please choose one of the options.')
+            return redirect(url_for('vote'))
         # Enforce one vote per user
         existing_vote = Vote.query.filter_by(user_id=current_user.id, poll_id=poll.id).first()
         if existing_vote:
+            logger.warning(
+                "vote rejected: user_id=%s already voted on poll_id=%s",
+                current_user.id, poll.id,
+            )
             flash('You have already voted!')
         else:
             # Instead of writing to DB, push to Redis Queue
@@ -110,6 +162,10 @@ def vote():
                 'choice': choice
             }
             r.lpush('vote_queue', json.dumps(vote_data))
+            logger.info(
+                "vote queued: user_id=%s poll_id=%s choice=%s",
+                current_user.id, poll.id, choice,
+            )
             flash('Vote submitted! It will be processed shortly.')
         return redirect(url_for('results'))
     
@@ -124,11 +180,11 @@ def results():
  # Check if we have cached results in Redis
     cached_results = r.get('results_cache')
     if cached_results:
-        print("Serving from Redis Cache!")
+        logger.info("results served from cache")
         data = json.loads(cached_results)
         return render_template('results.html', poll=poll, votes_a=data['votes_a'], votes_b=data['votes_b'])
-    
-    print("Serving from Database!")
+
+    logger.info("results served from database")
     votes_a = Vote.query.filter_by(poll_id=poll.id, choice='A').count()
     votes_b = Vote.query.filter_by(poll_id=poll.id, choice='B').count()
 
@@ -146,11 +202,25 @@ def admin():
 
 @app.route('/health')
 def health():
+    """Readiness probe for Docker Compose, load balancers and the deploy
+    workflow: both dependencies are checked, because /vote needs Redis and
+    everything else needs Postgres."""
+    checks = {}
     try:
         db.session.execute(text('SELECT 1'))
-        return {"status": "healthy"}, 200
+        checks['database'] = 'ok'
     except Exception as e:
-        return {"status": "unhealthy", "error": str(e)}, 500
+        logger.error("health check failed: database unreachable: %s", e)
+        checks['database'] = f'fail: {e}'
+    try:
+        r.ping()
+        checks['redis'] = 'ok'
+    except Exception as e:
+        logger.error("health check failed: redis unreachable: %s", e)
+        checks['redis'] = f'fail: {e}'
+
+    healthy = all(value == 'ok' for value in checks.values())
+    return {"status": "healthy" if healthy else "unhealthy", "checks": checks}, 200 if healthy else 500
 
 @app.cli.command('seed-poll')
 def seed_poll():
