@@ -25,10 +25,8 @@ A `.env.example` file is provided as a template for environment configuration.
 
 Create a local environment file from the example:
 
-```bash
+``bash
 cp .env.example .env
-
-## Running the Application with Docker
 
 ### Prerequisites
 - Docker and Docker Compose installed.
@@ -38,4 +36,4 @@ cp .env.example .env
 2. Ensure `.env` files are set up in the `app/` and `worker/` directories.
 3. Build and start all services:
    ```bash
-   sudo docker-compose up --build -d
+   sudo docker-compose up -d --build
