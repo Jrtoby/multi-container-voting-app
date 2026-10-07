@@ -8,9 +8,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-# entrypoint.sh needs the exec bit. Git does not reliably record it on Windows,
-# so set it here rather than relying on the checkout mode.
-RUN chmod +x entrypoint.sh
+# entrypoint.sh needs the exec bit and an LF shebang. Git does not reliably
+# record the mode on Windows and a CRLF checkout would make the kernel search
+# for "/bin/sh\r", so normalise both here instead of trusting the checkout.
+RUN sed -i 's/\r$//' entrypoint.sh && chmod +x entrypoint.sh
 
 EXPOSE 5000
 

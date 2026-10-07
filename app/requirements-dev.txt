@@ -1,0 +1,9 @@
+# Test-only dependencies. Install alongside requirements.txt:
+#     pip install -r app/requirements.txt -r app/requirements-dev.txt
+# They are deliberately kept out of requirements.txt so the Docker image
+# never ships a test runner or a fake Redis.
+pytest>=8,<9
+# Supplies the Redis stand-in used by the suite, so `python -m pytest`
+# runs with no services up. Same wire interface as redis-py, including
+# the LPUSH/GET/SETEX/PING commands the app uses.
+fakeredis>=2.26,<3
