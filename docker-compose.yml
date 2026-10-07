@@ -28,10 +28,6 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-voting_db}
     volumes:
       - postgres_data:/var/lib/postgresql/data
-    ports:
-      # Published for psql access from the host.
-      # TODO: tighten to 127.0.0.1:5432 in the security-hardening PR.
-      - "5432:5432"
     networks:
       - voting_net
     healthcheck:
@@ -47,10 +43,6 @@ services:
   redis:
     image: redis:7-alpine
     restart: unless-stopped
-    ports:
-      # Published for redis-cli access from the host.
-      # TODO: tighten to 127.0.0.1:6379 in the security-hardening PR.
-      - "6379:6379"
     networks:
       - voting_net
     healthcheck:
