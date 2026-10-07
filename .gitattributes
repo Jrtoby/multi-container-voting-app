@@ -1,0 +1,13 @@
+# Normalise line endings so the build context is identical on every OS.
+#
+# This is load-bearing, not cosmetic: a CRLF checkout of `*.sh` puts a \r in
+# the shebang, and the container dies with
+#     exec /app/entrypoint.sh: no such file or directory
+# because the kernel tries to exec the interpreter "/bin/sh\r".
+# `.editorconfig` already mandates `end_of_line = lf`; this makes Git agree.
+* text=auto eol=lf
+
+# Windows-native scripts keep CRLF, which PowerShell expects.
+*.ps1 text eol=crlf
+*.bat text eol=crlf
+*.cmd text eol=crlf
