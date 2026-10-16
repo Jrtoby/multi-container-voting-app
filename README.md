@@ -31,7 +31,6 @@ A Dockerised, multi-service voting application built with Flask, Node.js, Postgr
 
 ## 🏗️ Architecture
 ![Architecture Diagram](docs/architecture2.jpg)
-![Architecture Diagram](docs/architecture.jpg) 
 
 *   **Flask (`web`)**: Handles HTTP routing, UI rendering, authentication, and vote submission. It acts as the API layer.
 *   **Node.js (`worker`)**: Background worker that continuously drains the Redis queue and writes votes to PostgreSQL asynchronously.
