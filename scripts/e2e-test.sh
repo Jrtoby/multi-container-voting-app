@@ -9,7 +9,8 @@
 #   3. the worker drains the queue and the vote reaches Postgres
 #   4. /results reflects the vote once the cache expires
 #   5. a second vote is rejected (one vote per user)
-#   6. /admin totals match
+#   6. the admin area is admin-only: anonymous -> /admin/login, a signed-in
+#      normal user -> 403, and a provisioned admin sees the totals
 #   7. web + worker logs are the structured JSON we ship
 # Finally it tears the containers down.
 #
@@ -35,6 +36,8 @@ COOKIE_JAR="$(mktemp)"
 STAMP="$(date +%Y%m%d%H%M%S)"
 USERNAME="e2e-$STAMP"
 PASSWORD="e2e-password-1!"
+ADMIN_USERNAME="e2e-admin-$STAMP"
+ADMIN_PASSWORD="e2e-admin-password-1!"
 
 CHECKS=0
 FAILURES=0
@@ -122,6 +125,15 @@ request() {
     BODY="$(cat "$out")"
   fi
   rm -f "$out"
+}
+
+# csrf_token <path>
+# GET the page and echo the CSRF token its form carries. Tokens are
+# session-scoped and curl keeps the session in COOKIE_JAR, so a GET right
+# before each POST is enough.
+csrf_token() {
+  request "$1"
+  printf '%s' "$BODY" | grep -o 'name="csrf_token" value="[^"]*"' | head -n 1 | sed -e 's/.*value="//' -e 's/"$//'
 }
 
 # wait_until <timeout_seconds> <command...>
@@ -213,13 +225,13 @@ assert_contains "$BODY" '"database"[[:space:]]*:[[:space:]]*"ok"' 'database chec
 assert_contains "$BODY" '"redis"[[:space:]]*:[[:space:]]*"ok"' 'redis check is ok'
 
 step "Register a fresh user ($USERNAME)"
-request "/register" --form "username=$USERNAME&password=$PASSWORD"
+request "/register" --form "username=$USERNAME&password=$PASSWORD&csrf_token=$(csrf_token /register)"
 assert_eq "$STATUS" 302 'register redirects with 302'
 assert_contains "$LOCATION" '/login' 'register redirects to /login'
 assert_contains "$BODY" 'Registration successful' 'registration succeeded'
 
 step 'Log in'
-request "/login" --form "username=$USERNAME&password=$PASSWORD"
+request "/login" --form "username=$USERNAME&password=$PASSWORD&csrf_token=$(csrf_token /login)"
 assert_eq "$STATUS" 302 'login redirects with 302'
 assert_contains "$LOCATION" '/vote' 'login redirects to /vote'
 assert_contains "$BODY" "Hello, $USERNAME!" "session established (Hello, $USERNAME! shown)"
@@ -230,7 +242,7 @@ assert_eq "$STATUS" 200 'status code 200'
 assert_contains "$BODY" 'Which framework is better\?' 'seeded poll question present'
 
 step 'Cast a vote (choice A) — queued for the worker, never written directly'
-request "/vote" --form 'choice=A'
+request "/vote" --form "choice=A&csrf_token=$(csrf_token /vote)"
 assert_eq "$STATUS" 302 'vote redirects with 302'
 assert_contains "$LOCATION" '/results' 'vote redirects to /results'
 assert_contains "$BODY" 'Vote submitted' 'vote accepted and queued'
@@ -250,17 +262,39 @@ ROWS="$(sql_scalar 'SELECT count(*) FROM vote')"
 assert_eq "$ROWS" "$EXPECT_VOTES" 'vote table holds baseline+1 rows'
 
 step 'A second vote must be rejected'
-request "/vote" --form 'choice=B'
+request "/vote" --form "choice=B&csrf_token=$(csrf_token /vote)"
 assert_eq "$STATUS" 302 'second vote rejected with a redirect'
 assert_contains "$BODY" 'already voted' 'second vote rejected with "already voted"'
 
 ROWS="$(sql_scalar 'SELECT count(*) FROM vote')"
 assert_eq "$ROWS" "$EXPECT_VOTES" 'still baseline+1 rows after the rejected vote'
 
-step 'Admin dashboard totals'
+step 'Admin area is restricted (the reported vulnerability)'
 request "/admin"
-assert_eq "$STATUS" 200 'status code 200'
-assert_contains "$BODY" "Total Registered Users: $((BASE_USERS + 1))" 'admin counts the new registration'
+assert_eq "$STATUS" 403 'signed-in normal user is refused /admin with 403'
+
+# Drop the regular session so /admin is anonymous again.
+request "/logout"
+request "/admin"
+assert_contains "$BODY" 'Admin Login' 'anonymous /admin lands on the separate admin login page'
+
+step "Provision an admin account (flask create-admin --username $ADMIN_USERNAME)"
+if docker compose -f "$ROOT/docker-compose.yml" exec -T web \
+    flask create-admin --username "$ADMIN_USERNAME" --password "$ADMIN_PASSWORD" >/dev/null 2>&1; then
+  assert_ok 0 'flask create-admin provisioned the admin account'
+else
+  assert_ok 1 'flask create-admin provisioned the admin account'
+fi
+
+step 'Admin signs in through /admin/login and reads the dashboard'
+request "/admin/login" --form "username=$ADMIN_USERNAME&password=$ADMIN_PASSWORD&csrf_token=$(csrf_token /admin/login)"
+assert_eq "$STATUS" 302 'admin login redirects with 302'
+assert_contains "$LOCATION" '/admin' 'admin login redirects to /admin'
+
+request "/admin"
+assert_eq "$STATUS" 200 'admin dashboard status 200'
+# +2: the e2e user AND the admin account just created are both new rows.
+assert_contains "$BODY" "Total Registered Users: $((BASE_USERS + 2))" 'admin counts the new registration and the admin account'
 assert_contains "$BODY" "Total Votes Cast: $EXPECT_VOTES" 'admin counts the processed vote'
 
 step 'Logs are structured JSON on both services'

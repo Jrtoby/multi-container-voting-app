@@ -10,7 +10,8 @@
     3. the worker drains the queue and the vote reaches Postgres
     4. /results reflects the vote once the cache expires
     5. a second vote is rejected (one vote per user)
-    6. /admin totals match
+    6. the admin area is admin-only: anonymous -> /admin/login, a signed-in
+       normal user -> 403, and a provisioned admin sees the totals
     7. web + worker logs are the structured JSON we ship
   Finally it tears the containers down.
 
@@ -44,6 +45,8 @@ $CookieJar = Join-Path ([IO.Path]::GetTempPath()) 'voting-e2e-cookies.txt'
 $Stamp = Get-Date -Format 'yyyyMMddHHmmss'
 $Username = "e2e-$Stamp"
 $Password = 'e2e-password-1!'
+$AdminUsername = "e2e-admin-$Stamp"
+$AdminPassword = 'e2e-admin-password-1!'
 
 $script:Checks = 0
 $script:Failures = 0
@@ -116,6 +119,15 @@ function Invoke-Web {
         Location   = ''
         Body       = [string]$Content
     }
+}
+
+# Every POST form now carries a CSRF token, so scrape the one baked into the
+# page we are about to submit. Tokens are session-scoped, and raw curl keeps
+# the session in $CookieJar, so a GET immediately before each POST is enough.
+function Get-CsrfToken([string]$Uri) {
+    $Page = Invoke-Web -Uri $Uri
+    if ($Page.Body -match 'name="csrf_token"\s+value="([^"]+)"') { return $Matches[1] }
+    throw "no csrf_token field rendered on $Uri (status $($Page.StatusCode))"
 }
 
 # Poll until the script block returns $true, or give up after the timeout.
@@ -237,12 +249,12 @@ try {
     Assert ($Health.Body -match '"redis"\s*:\s*"ok"') 'redis check is ok'
 
     Write-Step "Register a fresh user ($Username)"
-    $Register = Invoke-Web -Uri "$BaseUrl/register" -Form @{ username = $Username; password = $Password }
+    $Register = Invoke-Web -Uri "$BaseUrl/register" -Form @{ username = $Username; password = $Password; csrf_token = (Get-CsrfToken "$BaseUrl/register") }
     Assert ($Register.StatusCode -eq 302 -and $Register.Location -like '*/login') "register redirects to /login (got $($Register.StatusCode) -> $($Register.Location))"
     Assert ($Register.Body -match 'Registration successful') 'registration succeeded'
 
     Write-Step 'Log in'
-    $Login = Invoke-Web -Uri "$BaseUrl/login" -Form @{ username = $Username; password = $Password }
+    $Login = Invoke-Web -Uri "$BaseUrl/login" -Form @{ username = $Username; password = $Password; csrf_token = (Get-CsrfToken "$BaseUrl/login") }
     Assert ($Login.StatusCode -eq 302 -and $Login.Location -like '*/vote') "login redirects to /vote (got $($Login.StatusCode) -> $($Login.Location))"
     Assert ($Login.Body -match "Hello, $Username!") "session established (Hello, $Username! shown)"
 
@@ -252,7 +264,7 @@ try {
     Assert ($VotePage.Body -match 'Which framework is better\?') 'seeded poll question present'
 
     Write-Step 'Cast a vote (choice A) — queued for the worker, never written directly'
-    $Cast = Invoke-Web -Uri "$BaseUrl/vote" -Form @{ choice = 'A' }
+    $Cast = Invoke-Web -Uri "$BaseUrl/vote" -Form @{ choice = 'A'; csrf_token = (Get-CsrfToken "$BaseUrl/vote") }
     Assert ($Cast.StatusCode -eq 302 -and $Cast.Location -like '*/results') "vote redirects to /results (got $($Cast.StatusCode) -> $($Cast.Location))"
     Assert ($Cast.Body -match 'Vote submitted') 'vote accepted and queued'
 
@@ -275,17 +287,34 @@ try {
     Assert ($Rows -eq "$ExpectVotes") "vote table holds baseline+1 rows (got $Rows, want $ExpectVotes)"
 
     Write-Step 'A second vote must be rejected'
-    $Second = Invoke-Web -Uri "$BaseUrl/vote" -Form @{ choice = 'B' }
+    $Second = Invoke-Web -Uri "$BaseUrl/vote" -Form @{ choice = 'B'; csrf_token = (Get-CsrfToken "$BaseUrl/vote") }
     Assert ($Second.StatusCode -eq 302) "second vote rejected with a redirect (got $($Second.StatusCode))"
     Assert ($Second.Body -match 'already voted') 'second vote rejected with "already voted"'
 
     $Rows = Get-SqlScalar 'SELECT count(*) FROM vote'
     Assert ($Rows -eq "$ExpectVotes") "still baseline+1 rows after the rejected vote (got $Rows)"
 
-    Write-Step 'Admin dashboard totals'
+    Write-Step 'Admin area is restricted (the reported vulnerability)'
+    $NonAdmin = Invoke-Web -Uri "$BaseUrl/admin"
+    Assert ($NonAdmin.StatusCode -eq 403) "signed-in normal user is refused /admin with 403 (got $($NonAdmin.StatusCode))"
+    Assert ($NonAdmin.Body -notmatch 'Total Registered Users') 'normal user never sees the admin dashboard'
+
+    # Drop the regular session so /admin is anonymous again.
+    Invoke-Web -Uri "$BaseUrl/logout" | Out-Null
+    $AnonAdmin = Invoke-Web -Uri "$BaseUrl/admin"
+    Assert ($AnonAdmin.Body -match 'Admin Login') 'anonymous /admin lands on the separate admin login page'
+
+    Write-Step "Provision an admin account (flask create-admin --username $AdminUsername)"
+    Invoke-Compose -ComposeArgs @('exec', '-T', 'web', 'flask', 'create-admin', '--username', $AdminUsername, '--password', $AdminPassword)
+
+    Write-Step 'Admin signs in through /admin/login and reads the dashboard'
+    $AdminLogin = Invoke-Web -Uri "$BaseUrl/admin/login" -Form @{ username = $AdminUsername; password = $AdminPassword; csrf_token = (Get-CsrfToken "$BaseUrl/admin/login") }
+    Assert ($AdminLogin.StatusCode -eq 302 -and $AdminLogin.Location -like '*/admin') "admin login redirects to /admin (got $($AdminLogin.StatusCode) -> $($AdminLogin.Location))"
+
     $Admin = Invoke-Web -Uri "$BaseUrl/admin"
-    Assert ($Admin.StatusCode -eq 200) "status code 200 (got $($Admin.StatusCode))"
-    Assert ($Admin.Body -match "Total Registered Users: $($BaseUsers + 1)") 'admin counts the new registration'
+    Assert ($Admin.StatusCode -eq 200) "admin dashboard status 200 (got $($Admin.StatusCode))"
+    # +2: the e2e user AND the admin account just created are both new rows.
+    Assert ($Admin.Body -match "Total Registered Users: $($BaseUsers + 2)") 'admin counts the new registration and the admin account'
     Assert ($Admin.Body -match "Total Votes Cast: $ExpectVotes") 'admin counts the processed vote'
 
     Write-Step 'Logs are structured JSON on both services'

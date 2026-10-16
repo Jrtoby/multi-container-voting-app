@@ -40,6 +40,10 @@ from models import db as models_db
 @pytest.fixture()
 def app():
     app_module.app.config.update(TESTING=True)
+    # CSRF is exercised explicitly in test_security.py, which flips this back
+    # on; everywhere else it would just force every fixture POST to scrape a
+    # token first and hide real routing bugs behind 400s.
+    app_module.app.config['WTF_CSRF_ENABLED'] = False
     return app_module.app
 
 

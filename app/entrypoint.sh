@@ -42,4 +42,9 @@ fi
 
 flask seed-poll
 
+# Provision the admin account from ADMIN_USERNAME / ADMIN_PASSWORD (set in
+# .env, passed through docker-compose.yml). Skips with a notice — never fails
+# the boot — when no password is configured, so /admin is locked by default.
+flask create-admin
+
 exec "$@"

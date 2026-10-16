@@ -76,7 +76,7 @@ def test_vote_requires_login(client):
 def test_admin_requires_login(client):
     response = client.get("/admin")
     assert response.status_code == 302
-    assert "/login" in response.headers["Location"]
+    assert "/admin/login" in response.headers["Location"]
 
 
 def test_results_page_is_public(client):
