@@ -2,9 +2,12 @@ import os
 import json
 import logging
 import redis
-from flask import Flask, render_template, redirect, url_for, flash, request
+import click
+from functools import wraps
+from flask import Flask, render_template, redirect, url_for, flash, request, abort
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user
 from flask_migrate import Migrate
+from flask_wtf.csrf import CSRFProtect
 from sqlalchemy import text
 from models import db, User, Poll, Vote
 
@@ -76,6 +79,12 @@ db.init_app(app)
 # is what app/migrations/env.py expects.
 migrate = Migrate(app, db)
 
+# Rejects any POST that does not carry a valid per-session CSRF token. Every
+# form template emits <input type="hidden" name="csrf_token"> via {{ csrf_token() }}.
+# Disabled under TESTING so the suite can post plain dicts; test_security.py
+# re-enables it to prove the guard actually fires.
+csrf = CSRFProtect(app)
+
 login_manager = LoginManager()
 login_manager.init_app(app)
 login_manager.login_view = 'login'
@@ -83,6 +92,31 @@ login_manager.login_view = 'login'
 @login_manager.user_loader
 def load_user(user_id):
     return User.query.get(int(user_id))
+
+
+def admin_required(view):
+    """Authentication is not authorisation.
+
+    /admin needs BOTH a signed-in session AND the is_admin role:
+      * anonymous        -> the dedicated admin login page (/admin/login)
+      * signed-in normal -> 403, logged as a denied access attempt
+    The role check reads user.is_admin, which only `flask create-admin` can
+    ever set — registration never grants it.
+    """
+
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        if not current_user.is_authenticated:
+            return redirect(url_for('admin_login'))
+        if not current_user.is_admin:
+            logger.warning(
+                "admin access denied: user_id=%s username=%s",
+                current_user.id, current_user.username,
+            )
+            abort(403)
+        return view(*args, **kwargs)
+
+    return wrapped
 
 # --- Routes ---
 
@@ -193,12 +227,47 @@ def results():
 
     return render_template('results.html', poll=poll, votes_a=votes_a, votes_b=votes_b)
 
+@app.route('/admin/login', methods=['GET', 'POST'])
+def admin_login():
+    """Dedicated sign-in door for the admin section.
+
+    Separate from /login on purpose: only accounts provisioned with the
+    is_admin role are accepted here, and the credential check plus the role
+    check happen together so a valid *user* password is never enough.
+    """
+    if current_user.is_authenticated:
+        return redirect(url_for('admin') if current_user.is_admin else url_for('vote'))
+
+    if request.method == 'POST':
+        username = request.form.get('username', '')
+        password = request.form.get('password', '')
+        user = User.query.filter_by(username=username).first()
+        if user and user.is_admin and user.check_password(password):
+            login_user(user)
+            logger.info("admin login succeeded: username=%s", username)
+            return redirect(url_for('admin'))
+        # One message for bad credentials and for missing role alike — the
+        # page must not reveal which admin accounts exist.
+        logger.warning("admin login denied: username=%s", username)
+        flash('Invalid admin username or password')
+    return render_template('admin_login.html')
+
+
 @app.route('/admin')
-@login_required
+@admin_required
 def admin():
     total_users = User.query.count()
     total_votes = Vote.query.count()
     return render_template('admin.html', total_users=total_users, total_votes=total_votes)
+
+
+@app.errorhandler(403)
+def forbidden(error):
+    return render_template(
+        'error.html',
+        code=403,
+        message='Admin access required. This area is restricted to administrator accounts.',
+    ), 403
 
 @app.route('/health')
 def health():
@@ -231,6 +300,56 @@ def seed_poll():
     db.session.add(Poll(**DEFAULT_POLL))
     db.session.commit()
     print('seeded default poll')
+
+
+@app.cli.command('create-admin')
+@click.option('--username', default=None, help='Admin account name (default: $ADMIN_USERNAME).')
+@click.option('--password', default=None, help='Admin password (default: $ADMIN_PASSWORD).')
+def create_admin(username, password):
+    """Create or promote the administrator account.
+
+    The only code path that ever sets is_admin=True, so admin credentials are
+    provisioned separately from public registration. With no arguments it reads
+    ADMIN_USERNAME / ADMIN_PASSWORD from the environment (docker-compose.yml
+    passes them from .env); if no password is available it exits 0 with a
+    notice, which keeps /admin locked by default and never fails the boot.
+    Safe to run repeatedly — existing admins are left untouched.
+    """
+    username = username or os.getenv('ADMIN_USERNAME', '')
+    password = password or os.getenv('ADMIN_PASSWORD', '')
+
+    if not username or not password:
+        print(
+            'ADMIN_USERNAME / ADMIN_PASSWORD not set; skipping admin '
+            'provisioning — /admin stays locked until an admin is created.'
+        )
+        return
+
+    user = User.query.filter_by(username=username).first()
+    if user is None:
+        user = User(username=username, is_admin=True)
+        user.set_password(password)
+        db.session.add(user)
+        db.session.commit()
+        logger.info("admin created: username=%s", username)
+        print(f'created admin account "{username}"')
+        return
+
+    changed = False
+    if not user.is_admin:
+        user.is_admin = True
+        changed = True
+    if not user.check_password(password):
+        # The environment is the source of truth for the bootstrap account,
+        # so a rotated ADMIN_PASSWORD takes effect on the next boot.
+        user.set_password(password)
+        changed = True
+    if changed:
+        db.session.commit()
+        logger.info("admin provisioned: username=%s", username)
+        print(f'account "{username}" is now an admin')
+    else:
+        print(f'admin account "{username}" already up to date')
 
 # The schema is owned by Alembic, not by db.create_all(). create_all() never
 # ALTERs an existing table, so on any deployment whose postgres_data volume

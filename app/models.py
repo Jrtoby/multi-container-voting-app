@@ -8,6 +8,10 @@ class User(UserMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False)
     password_hash = db.Column(db.String(255), nullable=False)
+    # Authorisation role, added by migration 0002 (server_default false, so
+    # every pre-existing account stays a standard user). Registration never
+    # sets it; only `flask create-admin` does.
+    is_admin = db.Column(db.Boolean, nullable=False, default=False, server_default=db.false())
     
     def set_password(self, password):
         self.password_hash = generate_password_hash(password)

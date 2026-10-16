@@ -15,3 +15,6 @@ npm-debug.log
 
 # Docker
 *.pid
+
+# Deployment secrets - never commit
+.github/ssh/

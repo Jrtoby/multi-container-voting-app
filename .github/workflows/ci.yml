@@ -27,9 +27,32 @@ jobs:
         run: |
           cd app
           python -m pytest tests/ -v
-          
+
+  test-worker:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: worker/package-lock.json
+
+      - name: Install dependencies
+        run: |
+          cd worker
+          npm ci
+
+      - name: Run worker tests
+        run: |
+          cd worker
+          npm test
+
   build:
-    needs: test
+    needs: [test, test-worker]
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main'
     steps:

@@ -19,6 +19,18 @@ def create_user(app, username="alice", password="s3cret-password"):
         return user.id
 
 
+def create_admin(app, username="boss", password="s3cret-password"):
+    """Create a user carrying the is_admin role, the way `flask create-admin`
+    would. Returns the id."""
+    with app.app_context():
+        user = User(username=username, is_admin=True)
+        user.set_password(password)
+        db.session.add(user)
+        db.session.commit()
+        db.session.refresh(user)
+        return user.id
+
+
 def seed_poll(app):
     """Create the default poll if absent. Returns the poll id."""
     with app.app_context():

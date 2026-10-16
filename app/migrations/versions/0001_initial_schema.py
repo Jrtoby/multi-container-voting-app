@@ -58,9 +58,10 @@ def upgrade():
         sa.Column('poll_id', sa.Integer(), nullable=False),
         sa.Column('choice', sa.String(length=1), nullable=False),
         sa.PrimaryKeyConstraint('id'),
-        # Final backstop for one-vote-per-user. The app gates on an atomic Redis
-        # SADD and the worker treats a violation as a no-op, so this constraint
-        # only fires if something bypassed both -- which is what it is for.
+        # Final backstop for one-vote-per-user. The app pre-checks the vote
+        # table before enqueuing and the worker treats a 23505 violation as a
+        # no-op, so this constraint only fires if something bypassed both --
+        # which is what it is for.
         sa.UniqueConstraint('user_id', 'poll_id', name='_user_poll_uc'),
         sa.ForeignKeyConstraint(['poll_id'], ['poll.id']),
         sa.ForeignKeyConstraint(['user_id'], ['user.id']),

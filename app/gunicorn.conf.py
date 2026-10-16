@@ -7,8 +7,8 @@ workers = int(os.getenv("GUNICORN_WORKERS", min(4, (multiprocessing.cpu_count() 
 threads = int(os.getenv("GUNICORN_THREADS", "2"))
 worker_class = "gthread"
 
-# Vote submissions and the login rate limiter both wait on Redis, so a worker
-# blocked there must not hold a slot indefinitely.
+# Vote submissions and login both wait on Redis or Postgres, so a request
+# wedged on a dependency must not hold a worker slot indefinitely.
 timeout = int(os.getenv("GUNICORN_TIMEOUT", "30"))
 graceful_timeout = int(os.getenv("GUNICORN_GRACEFUL_TIMEOUT", "30"))
 keepalive = 5

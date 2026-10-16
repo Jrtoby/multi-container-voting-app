@@ -94,7 +94,7 @@ The application is fully containerized. Below is a screenshot of our Docker Comp
 
 ## ☁️ Deployment (CI/CD Pipeline)
 Our pipeline automatically runs on every push to `main`:
-1. **Test**: Runs the `pytest` suite (SQLite + `fakeredis` for fast, isolated testing).
+1. **Test**: Runs the `pytest` suite (SQLite + `fakeredis` for fast, isolated testing) **and** the Node.js worker test suite (`node --test`).
 2. **Build**: Builds Docker images for the Flask web app and Node.js worker, pushing them to Docker Hub.
 3. **Deploy**: SSH into the AWS EC2 instance, pulls the latest images, and restarts the containers using Docker Compose.
 ![GitHub Actions Pipeline](docs/screenshots/pipeline.png)
@@ -106,9 +106,34 @@ GitHub Actions Pipeline
 | `DATABASE_URL` | PostgreSQL connection string |
 | `REDIS_HOST` | Redis hostname (use `redis` in Docker) |
 | `SECRET_KEY` | Flask session secret key |
+| `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` | Database bootstrap credentials |
+| `ADMIN_USERNAME` / `ADMIN_PASSWORD` | Bootstrap admin account for `/admin` (see Security below) |
 | `DOCKER_USERNAME` | GitHub Secret for Docker Hub |
 | `DOCKER_PASSWORD` | GitHub Secret for Docker Hub PAT |
 | `EC2_HOST`, `EC2_USER`, `EC2_SSH_KEY` | GitHub Secrets for AWS deployment |
+
+## 🔒 Security & Admin Access
+Authentication is **not** authorisation. Public registration only ever creates
+standard users (`is_admin = false`); the `/admin` dashboard is restricted to
+administrator accounts and is protected on three levels:
+
+* **Separate admin sign-in** — `/admin/login` is a dedicated door that checks
+  the credentials *and* the `is_admin` role together, so a valid normal-user
+  password is rejected there.
+* **Role gate** — `/admin` is wrapped in `admin_required`: anonymous visitors
+  are redirected to `/admin/login`, and a signed-in non-admin receives `403`.
+* **CSRF protection** — every POST form carries a per-session token
+  (`Flask-WTF`), so cross-site form submissions are rejected with `400`.
+
+Provision the admin account with the CLI (it is also run automatically at boot
+from `ADMIN_USERNAME`/`ADMIN_PASSWORD`):
+
+```bash
+docker compose exec web flask create-admin --username admin --password 'choose-a-strong-one'
+```
+
+Leave `ADMIN_PASSWORD` empty to keep `/admin` locked — no admin account exists
+until you create one.
 
 ## 🔧 Troubleshooting
 - **Port Conflict (5432/6379)**: Stop local PostgreSQL/Redis services (`sudo systemctl stop postgresql redis-server`).
@@ -124,8 +149,11 @@ GitHub Actions Pipeline
 
 ## Future Improvements
 *   Migrate from Docker Compose to Kubernetes (K8s) for better scaling.
+*   Put the web tier behind a load balancer (nginx/HAProxy) so `web` can scale
+    horizontally like the `worker` already does (`deploy.replicas: 2`).
 *   Implement Prometheus and Grafana for advanced monitoring and alerting.
 *   Add OAuth2 social login (Google/GitHub) to improve user experience.
+*   Move the WTF CSRF secret/session store to Redis for multi-replica sessions.
 
 ## 📸 Screenshots
 
