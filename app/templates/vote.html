@@ -1,10 +1,18 @@
 {% extends "base.html" %}
 {% block content %}
-    <h2>{{ poll.question }}</h2>
-    <form method="POST">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <input type="radio" name="choice" value="A" required> {{ poll.option_a }}<br><br>
-        <input type="radio" name="choice" value="B" required> {{ poll.option_b }}<br><br>
-        <button type="submit">Submit Vote</button>
-    </form>
+    <div class="card">
+        <h2>{{ poll.question }}</h2>
+        <form method="POST">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <label class="option">
+                <input type="radio" name="choice" value="A" required>
+                <span>{{ poll.option_a }}</span>
+            </label>
+            <label class="option">
+                <input type="radio" name="choice" value="B" required>
+                <span>{{ poll.option_b }}</span>
+            </label>
+            <button type="submit">Submit Vote</button>
+        </form>
+    </div>
 {% endblock %}

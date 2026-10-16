@@ -1,6 +1,14 @@
 {% extends "base.html" %}
 {% block content %}
-    <h2>Admin Dashboard</h2>
-    <p>Total Registered Users: {{ total_users }}</p>
-    <p>Total Votes Cast: {{ total_votes }}</p>
+    <div class="card">
+        <h2>Admin Dashboard</h2>
+        <div class="stats">
+            <div class="stat">
+                <p>Total Registered Users: {{ total_users }}</p>
+            </div>
+            <div class="stat">
+                <p>Total Votes Cast: {{ total_votes }}</p>
+            </div>
+        </div>
+    </div>
 {% endblock %}

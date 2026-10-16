@@ -1,10 +1,24 @@
 {% extends "base.html" %}
 {% block content %}
     {% if poll %}
-        <h2>Results for: {{ poll.question }}</h2>
-        <p>{{ poll.option_a }}: {{ votes_a }} votes</p>
-        <p>{{ poll.option_b }}: {{ votes_b }} votes</p>
+        {% set total = votes_a + votes_b %}
+        {% set pct_a = ((votes_a / total) * 100) | round(1) if total > 0 else 0 %}
+        {% set pct_b = ((votes_b / total) * 100) | round(1) if total > 0 else 0 %}
+        <div class="card">
+            <h2>Results for: {{ poll.question }}</h2>
+            <div class="result">
+                <p class="result-line">{{ poll.option_a }}: {{ votes_a }} votes</p>
+                <div class="bar-track"><div class="bar-fill" style="width: {{ pct_a }}%"></div></div>
+            </div>
+            <div class="result">
+                <p class="result-line">{{ poll.option_b }}: {{ votes_b }} votes</p>
+                <div class="bar-track"><div class="bar-fill alt" style="width: {{ pct_b }}%"></div></div>
+            </div>
+            <p class="result-total">{{ total }} vote{{ "s" if total != 1 }} cast · updates every ~10 seconds</p>
+        </div>
     {% else %}
-        <p>No polls available yet.</p>
+        <div class="card">
+            <p>No polls available yet.</p>
+        </div>
     {% endif %}
 {% endblock %}

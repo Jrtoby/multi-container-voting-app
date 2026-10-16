@@ -1,7 +1,9 @@
 {% extends "base.html" %}
 {% block title %}{{ code }}{% endblock %}
 {% block content %}
-    <h2>{{ code }}</h2>
-    <p>{{ message }}</p>
-    <p><a href="{{ url_for('index') }}">Back to the app</a></p>
+    <div class="card">
+        <h2 class="error-code">{{ code }}</h2>
+        <p>{{ message }}</p>
+        <p><a class="back" href="{{ url_for('index') }}">← Back to the app</a></p>
+    </div>
 {% endblock %}
