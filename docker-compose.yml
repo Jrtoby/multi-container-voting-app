@@ -17,6 +17,15 @@
 #
 # Run with:  docker compose up -d --build
 
+# Shared log rotation for every service: Docker's default json-file driver
+# grows without bound, which is how disks fill up on a long-running host.
+# Anchored via *default-logging below (compose extension field).
+x-default-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   # 1. PostgreSQL Database
   db:
@@ -30,6 +39,12 @@ services:
       - postgres_data:/var/lib/postgresql/data
     networks:
       - voting_net
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1g
+    logging: *default-logging
     healthcheck:
       # $${...} is escaped so the value is expanded by the shell *inside* the
       # container from its own environment, not baked in at parse time.
@@ -43,8 +58,19 @@ services:
   redis:
     image: redis:7-alpine
     restart: unless-stopped
+    # AOF so queued-but-unprocessed votes and the results cache survive a
+    # container restart instead of vanishing with the process.
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
     networks:
       - voting_net
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512m
+    logging: *default-logging
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -54,19 +80,27 @@ services:
 
   # 3. Flask Web Application
   web:
+    # image + build together: CI pushes the tagged image (EC2 pulls it), while
+    # `docker compose up --build` builds these exact sources locally so the e2e
+    # suite exercises the working tree instead of a stale Hub tag.
     image: techtoby01/voting-app-web:latest
+    build: ./app
     restart: unless-stopped
     ports:
       - "5000:5000"
     environment:
       FLASK_APP: app.py
-      FLASK_ENV: development
       # SQLAlchemy needs the driver in the scheme, hence +psycopg2.
       # The worker uses the plain postgresql:// form for node-postgres.
       DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-voting_user}:${POSTGRES_PASSWORD:-supersecretpassword}@db:5432/${POSTGRES_DB:-voting_db}
       REDIS_HOST: redis
       REDIS_PORT: 6379
       SECRET_KEY: ${SECRET_KEY:-change-me-to-a-long-random-string}
+      # Admin credentials are provisioned by `flask create-admin` in
+      # app/entrypoint.sh. An empty password skips provisioning, so /admin
+      # is locked until an admin account is deliberately created.
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
     depends_on:
       db:
         condition: service_healthy
@@ -74,6 +108,16 @@ services:
         condition: service_healthy
     networks:
       - voting_net
+    deploy:
+      # web is left at one replica on purpose: it is the only service with a
+      # published host port, so scaling it needs a load balancer in front
+      # (see README > Future Improvements). Vertical tuning is available via
+      # GUNICORN_WORKERS / GUNICORN_THREADS.
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1g
+    logging: *default-logging
     healthcheck:
       # Uses only the stdlib, so it works regardless of what the app image
       # installs — no dependency on curl or wget being present.
@@ -85,13 +129,15 @@ services:
       interval: 15s
       timeout: 5s
       retries: 3
-      # Migrations and the poll seed finish before gunicorn binds, so allow a
-      # slow first boot rather than counting it against the retries above.
+      # Migrations, poll seed and admin provisioning finish before gunicorn
+      # binds, so allow a slow first boot rather than counting it against the
+      # retries above.
       start_period: 20s
 
   # 4. Node.js Background Worker
   worker:
     image: techtoby01/voting-app-worker:latest
+    build: ./worker
     restart: unless-stopped
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-voting_user}:${POSTGRES_PASSWORD:-supersecretpassword}@db:5432/${POSTGRES_DB:-voting_db}
@@ -109,6 +155,16 @@ services:
         condition: service_healthy
     networks:
       - voting_net
+    deploy:
+      # Two workers demo horizontal scaling of the stateless tier: BRPOP hands
+      # each queued vote to exactly one of them, so no coordination is needed.
+      # Equally valid on a single replica: docker compose up -d --scale worker=N
+      replicas: 2
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512m
+    logging: *default-logging
     healthcheck:
       # The worker has no HTTP listener, so probe its real dependency.
       # reconnectStrategy: () => false makes a Redis outage fail fast instead
@@ -125,6 +181,7 @@ services:
 
 volumes:
   postgres_data:
+  redis_data:
 
 networks:
   voting_net:

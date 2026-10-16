@@ -1,7 +1,7 @@
 """Results page (DB path, cache path) and the admin dashboard."""
 import json
 
-from helpers import add_vote, create_user, login, seed_poll
+from helpers import add_vote, create_admin, create_user, login, seed_poll
 
 
 def test_results_without_poll(client):
@@ -57,7 +57,7 @@ def test_results_cache_hit_does_not_rewrite_cache(client, redis_client):
 
 def test_admin_shows_totals(app, client):
     poll_id = seed_poll(app)
-    create_user(app, "admin-user-1")
+    create_admin(app, "admin-user-1")
     voter_id = create_user(app, "admin-user-2")
     add_vote(app, voter_id, poll_id, "A")
 
@@ -71,4 +71,4 @@ def test_admin_shows_totals(app, client):
 def test_admin_requires_login(client):
     response = client.get("/admin")
     assert response.status_code == 302
-    assert "/login" in response.headers["Location"]
+    assert "/admin/login" in response.headers["Location"]
