@@ -1,36 +1,323 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Voting App{% endblock %}</title>
     <style>
-        body { font-family: sans-serif; margin: 40px; }
-        nav a { margin-right: 15px; text-decoration: none; color: blue; }
-        .flash { color: red; }
+        :root {
+            --bg1: #0f172a;
+            --bg2: #1e1b4b;
+            --card: rgba(255, 255, 255, 0.06);
+            --card-border: rgba(255, 255, 255, 0.12);
+            --text: #e2e8f0;
+            --muted: #94a3b8;
+            --accent: #818cf8;
+            --accent-strong: #6366f1;
+            --accent-glow: rgba(129, 140, 248, 0.35);
+            --danger: #f87171;
+            --success: #34d399;
+        }
+
+        * { box-sizing: border-box; }
+
+        body {
+            font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+            margin: 0;
+            min-height: 100vh;
+            color: var(--text);
+            background: linear-gradient(135deg, var(--bg1) 0%, var(--bg2) 100%);
+            background-attachment: fixed;
+        }
+
+        /* ---------- Navigation ---------- */
+        nav {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            flex-wrap: wrap;
+            padding: 16px 28px;
+            background: rgba(15, 23, 42, 0.7);
+            backdrop-filter: blur(10px);
+            border-bottom: 1px solid var(--card-border);
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+
+        nav .brand {
+            font-weight: 700;
+            font-size: 1.1rem;
+            margin-right: auto;
+            background: linear-gradient(90deg, var(--accent), #c084fc);
+            -webkit-background-clip: text;
+            background-clip: text;
+            color: transparent;
+            letter-spacing: 0.3px;
+        }
+
+        nav a {
+            text-decoration: none;
+            color: var(--muted);
+            padding: 8px 14px;
+            border-radius: 8px;
+            font-size: 0.95rem;
+            transition: background 0.2s, color 0.2s;
+        }
+
+        nav a:hover {
+            color: var(--text);
+            background: rgba(255, 255, 255, 0.08);
+        }
+
+        nav .hello {
+            color: var(--accent);
+            font-weight: 600;
+            padding: 8px 14px;
+        }
+
+        main {
+            max-width: 720px;
+            margin: 48px auto;
+            padding: 0 20px;
+        }
+
+        /* ---------- Flash messages ---------- */
+        .flash-wrap { margin-bottom: 20px; }
+
+        .flash {
+            background: rgba(99, 102, 241, 0.12);
+            border: 1px solid rgba(129, 140, 248, 0.4);
+            border-left: 4px solid var(--accent);
+            color: var(--text);
+            padding: 12px 18px;
+            border-radius: 10px;
+            margin: 8px 0;
+            font-size: 0.95rem;
+        }
+
+        /* ---------- Cards ---------- */
+        .card {
+            background: var(--card);
+            border: 1px solid var(--card-border);
+            border-radius: 16px;
+            padding: 36px 40px;
+            backdrop-filter: blur(8px);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
+        }
+
+        h2 {
+            margin: 0 0 24px;
+            font-size: 1.6rem;
+            font-weight: 700;
+            color: #fff;
+        }
+
+        h2 .sub {
+            display: block;
+            font-size: 0.9rem;
+            font-weight: 400;
+            color: var(--muted);
+            margin-top: 6px;
+        }
+
+        p { color: var(--muted); line-height: 1.6; }
+
+        /* ---------- Forms ---------- */
+        form { display: flex; flex-direction: column; gap: 16px; }
+
+        input[type="text"],
+        input[type="password"] {
+            width: 100%;
+            padding: 13px 16px;
+            border-radius: 10px;
+            border: 1px solid var(--card-border);
+            background: rgba(15, 23, 42, 0.6);
+            color: var(--text);
+            font-size: 1rem;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+
+        input[type="text"]:focus,
+        input[type="password"]:focus {
+            outline: none;
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px var(--accent-glow);
+        }
+
+        input::placeholder { color: #64748b; }
+
+        button {
+            padding: 13px 24px;
+            border: none;
+            border-radius: 10px;
+            background: linear-gradient(135deg, var(--accent-strong), #8b5cf6);
+            color: #fff;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.15s, box-shadow 0.15s;
+            box-shadow: 0 4px 18px rgba(99, 102, 241, 0.4);
+            margin-top: 4px;
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 24px rgba(99, 102, 241, 0.55);
+        }
+
+        button:active { transform: translateY(0); }
+
+        /* ---------- Vote options ---------- */
+        .option {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            padding: 18px 20px;
+            border: 1px solid var(--card-border);
+            border-radius: 12px;
+            background: rgba(15, 23, 42, 0.45);
+            cursor: pointer;
+            transition: border-color 0.2s, background 0.2s, transform 0.15s;
+            font-size: 1.05rem;
+            color: var(--text);
+        }
+
+        .option:hover {
+            border-color: var(--accent);
+            background: rgba(99, 102, 241, 0.1);
+            transform: translateY(-1px);
+        }
+
+        .option:has(input:checked) {
+            border-color: var(--accent);
+            background: rgba(99, 102, 241, 0.16);
+            box-shadow: 0 0 0 2px var(--accent-glow);
+        }
+
+        .option input[type="radio"] {
+            width: 18px;
+            height: 18px;
+            accent-color: var(--accent-strong);
+            cursor: pointer;
+        }
+
+        /* ---------- Results bars ---------- */
+        .result { margin: 18px 0; }
+
+        .result-line {
+            margin: 0 0 8px;
+            color: var(--text);
+            font-weight: 600;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .result-line .count { color: var(--muted); font-weight: 400; }
+
+        .bar-track {
+            height: 14px;
+            border-radius: 999px;
+            background: rgba(15, 23, 42, 0.7);
+            overflow: hidden;
+            border: 1px solid var(--card-border);
+        }
+
+        .bar-fill {
+            height: 100%;
+            border-radius: 999px;
+            background: linear-gradient(90deg, var(--accent-strong), #a78bfa);
+            transition: width 0.6s ease;
+            min-width: 2px;
+        }
+
+        .bar-fill.alt { background: linear-gradient(90deg, #0ea5e9, #22d3ee); }
+
+        .result-total {
+            margin-top: 20px;
+            padding-top: 16px;
+            border-top: 1px solid var(--card-border);
+            color: var(--muted);
+            font-size: 0.9rem;
+        }
+
+        /* ---------- Admin stats ---------- */
+        .stats {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 18px;
+            margin-top: 8px;
+        }
+
+        .stat {
+            background: rgba(15, 23, 42, 0.5);
+            border: 1px solid var(--card-border);
+            border-radius: 12px;
+            padding: 22px;
+            text-align: center;
+        }
+
+        .stat .stat-value {
+            display: block;
+            font-size: 2rem;
+            font-weight: 700;
+            color: var(--accent);
+        }
+
+        /* ---------- Error ---------- */
+        .error-code {
+            font-size: 4rem;
+            font-weight: 800;
+            margin: 0;
+            background: linear-gradient(90deg, var(--danger), #fb923c);
+            -webkit-background-clip: text;
+            background-clip: text;
+            color: transparent;
+            line-height: 1;
+        }
+
+        a.back {
+            color: var(--accent);
+            text-decoration: none;
+            font-weight: 600;
+        }
+
+        a.back:hover { text-decoration: underline; }
+
+        @media (max-width: 540px) {
+            main { margin: 28px auto; }
+            .card { padding: 24px 22px; }
+            .stats { grid-template-columns: 1fr; }
+        }
     </style>
 </head>
 <body>
     <nav>
+        <span class="brand">🗳 Voting App</span>
         <a href="/vote">Vote</a>
         <a href="/results">Results</a>
         {% if current_user.is_authenticated and current_user.is_admin %}
             <a href="/admin">Admin</a>
         {% endif %}
         {% if current_user.is_authenticated %}
-            <span>Hello, {{ current_user.username }}!</span>
+            <span class="hello">Hello, {{ current_user.username }}!</span>
             <a href="/logout">Logout</a>
         {% else %}
             <a href="/login">Login</a>
             <a href="/register">Register</a>
         {% endif %}
     </nav>
-    <hr>
-    {% with messages = get_flashed_messages() %}
-        {% if messages %}
-            {% for message in messages %}
-                <p class="flash">{{ message }}</p>
-            {% endfor %}
-        {% endif %}
-    {% endwith %}
-    {% block content %}{% endblock %}
+    <main>
+        <div class="flash-wrap">
+        {% with messages = get_flashed_messages() %}
+            {% if messages %}
+                {% for message in messages %}
+                    <p class="flash">{{ message }}</p>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+        </div>
+        {% block content %}{% endblock %}
+    </main>
 </body>
 </html>
