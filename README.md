@@ -45,7 +45,7 @@ Watching the Actions tab. You should see:
 - deploy job: Green ✅
 
 ## 🛠️ Tech Stack
-*   **Frontend**: HTML5 Templates
+*   **Frontend**: HTML5 Templates, CSS
 *   **Backend**: Python (Flask), Node.js
 *   **Database**: PostgreSQL 15, Redis 7
 *   **DevOps**: Docker, Docker Compose, GitHub Actions, AWS EC2
@@ -157,7 +157,19 @@ until you create one.
 ## 📸 Screenshots
 
 ![DockerHub Images](docs/screenshots/dockerhub.png)
-DockerHub Images
+**DockerHub Images**
 
-![Live Voting App](docs/screenshots/app.png)
-Live Voting App
+![Live Voting App](docs/screenshots/Login.png)
+**User Login Page**
+- *Description:* 
+The User Login Page provides a secure, streamlined entryway for standard users to access their accounts, participate in ongoing polls, and view voting results. 
+
+![Voted](docs/screenshots/voted.png)
+**Live Poll & Voting Results Page**
+- *Description:*
+Displays real-time voting outcomes and statistics once a choice has been cast. Users can view standard breakdown charts, current vote percentages.
+
+![Admin](docs/screenshots/Admin.png)
+![Dashboard](docs/screenshots/Admin_Dashboard.png)
+**Admin Login Page & Dashboard**
+- *Description:* A dedicated portal for system administrators, enabling administrative access to high-level controls, election management, user oversight, real-time polling data and total user activity, platform analytics.
